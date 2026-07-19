@@ -1,39 +1,20 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import BackButton from "../components/BackButton";
+import { COLORS, DIR, KEY_TO_DIR } from "../shared/theme";
+import { NotebookPage, GameHeader, PillButton, ColorPicker, CrayonSprite, Dpad, GameOverlay, KeyHints, useTouchDevice } from "../shared/components";
 
 /* ── Constants ── */
 const BOARD_PX = 320;
-const COLORS = [
-  { name: "Rojo", body: "#e63946", tip: "#c1121f", shade: "#a4161a" },
-  { name: "Azul", body: "#2196F3", tip: "#1565C0", shade: "#0D47A1" },
-  { name: "Verde", body: "#4caf50", tip: "#2e7d32", shade: "#1b5e20" },
-  { name: "Naranja", body: "#ff9800", tip: "#e65100", shade: "#bf360c" },
-  { name: "Morado", body: "#9c27b0", tip: "#6a1b9a", shade: "#4a148c" },
-  { name: "Rosa", body: "#e91e8c", tip: "#c2185b", shade: "#880e4f" },
-];
+const PAD = 16; // franja del viewBox para los números de fila/columna
 
 const FLOOR = 0, WALL = 1, EXIT = 2, INK = 3, ERASER = 4, SPILL = 5;
 
-const DIR = {
-  UP: { x: 0, y: -1 },
-  DOWN: { x: 0, y: 1 },
-  LEFT: { x: -1, y: 0 },
-  RIGHT: { x: 1, y: 0 },
-};
-
-const KEY_TO_DIR = {
-  ArrowUp: DIR.UP, ArrowDown: DIR.DOWN, ArrowLeft: DIR.LEFT, ArrowRight: DIR.RIGHT,
-  w: DIR.UP, W: DIR.UP, s: DIR.DOWN, S: DIR.DOWN,
-  a: DIR.LEFT, A: DIR.LEFT, d: DIR.RIGHT, D: DIR.RIGHT,
-};
-
 const MAX_UNDOS = 3;
 
-/* ── Levels (Chapter 1: "Primeros Trazos") ── */
-// 0=floor, 1=wall, 2=exit, 3=ink(+10), 4=eraser(-5), 5=spill
+/* ── Levels (Capítulo 1: "Primeros Trazos") ── */
+// 0=suelo, 1=muro, 2=salida, 3=tinta(+10), 4=borrador(-5), 5=derrame
 const LEVELS = [
   {
-    id: 1, name: "Pagina 1", size: 8, ink: 50,
+    id: 1, name: "Página 1", size: 8, ink: 50,
     start: [1, 6],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -48,7 +29,7 @@ const LEVELS = [
     stars: { one: 0, two: 15, three: 30 },
   },
   {
-    id: 2, name: "Pagina 2", size: 8, ink: 48,
+    id: 2, name: "Página 2", size: 8, ink: 48,
     start: [1, 1],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -63,7 +44,7 @@ const LEVELS = [
     stars: { one: 0, two: 12, three: 25 },
   },
   {
-    id: 3, name: "Pagina 3", size: 8, ink: 42,
+    id: 3, name: "Página 3", size: 8, ink: 42,
     start: [1, 1],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -78,7 +59,7 @@ const LEVELS = [
     stars: { one: 0, two: 10, three: 20 },
   },
   {
-    id: 4, name: "Pagina 4", size: 8, ink: 40,
+    id: 4, name: "Página 4", size: 8, ink: 40,
     start: [6, 1],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -93,7 +74,7 @@ const LEVELS = [
     stars: { one: 0, two: 8, three: 18 },
   },
   {
-    id: 5, name: "Pagina 5", size: 8, ink: 38,
+    id: 5, name: "Página 5", size: 8, ink: 38,
     start: [1, 1],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -108,7 +89,7 @@ const LEVELS = [
     stars: { one: 0, two: 8, three: 16 },
   },
   {
-    id: 6, name: "Pagina 6", size: 8, ink: 36,
+    id: 6, name: "Página 6", size: 8, ink: 36,
     start: [1, 6],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -123,7 +104,7 @@ const LEVELS = [
     stars: { one: 0, two: 6, three: 14 },
   },
   {
-    id: 7, name: "Pagina 7", size: 8, ink: 35,
+    id: 7, name: "Página 7", size: 8, ink: 35,
     start: [1, 1],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -138,7 +119,7 @@ const LEVELS = [
     stars: { one: 0, two: 5, three: 12 },
   },
   {
-    id: 8, name: "Pagina 8", size: 8, ink: 34,
+    id: 8, name: "Página 8", size: 8, ink: 34,
     start: [6, 6],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -153,7 +134,7 @@ const LEVELS = [
     stars: { one: 0, two: 4, three: 10 },
   },
   {
-    id: 9, name: "Pagina 9", size: 8, ink: 32,
+    id: 9, name: "Página 9", size: 8, ink: 32,
     start: [1, 1],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -168,7 +149,7 @@ const LEVELS = [
     stars: { one: 0, two: 4, three: 10 },
   },
   {
-    id: 10, name: "Pagina 10", size: 8, ink: 30,
+    id: 10, name: "Página 10", size: 8, ink: 30,
     start: [1, 6],
     grid: [
       [1,1,1,1,1,1,1,1],
@@ -208,81 +189,16 @@ function countWalkable(grid, size, axis, idx) {
   return c;
 }
 
-/* ── CSS ── */
-const css = `
-@import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Fredoka+One&display=swap');
-@keyframes wobble{0%,100%{transform:rotate(-1deg)}50%{transform:rotate(1deg)}}
-@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-@keyframes rainbow{0%{color:#e63946}16%{color:#ff9800}33%{color:#4caf50}50%{color:#2196F3}66%{color:#9c27b0}83%{color:#e91e8c}100%{color:#e63946}}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
-@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
-@keyframes inkDrip{0%{transform:scaleX(1)}50%{transform:scaleX(.98)}100%{transform:scaleX(1)}}
-@keyframes blindPulse{0%,100%{opacity:.15}50%{opacity:.35}}
-`;
-
 /* ── Sub-components ── */
-
 function CrayonPlayer({ x, y, cell, dir, color }) {
   const cx = x * cell + cell / 2;
   const cy = y * cell + cell / 2;
   const angle = dir.x === 1 ? 0 : dir.x === -1 ? 180 : dir.y === -1 ? 270 : 90;
-  const s = cell / 20; // scale factor relative to default 20px cell
+  const s = cell / 20; // factor de escala respecto a la celda base de 20px
   return (
     <g transform={`translate(${cx},${cy}) scale(${s}) rotate(${angle})`}>
-      <defs>
-        <linearGradient id={`bp-cg-${color.name}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="white" stopOpacity=".25" />
-          <stop offset="40%" stopColor="white" stopOpacity="0" />
-          <stop offset="100%" stopColor="black" stopOpacity=".12" />
-        </linearGradient>
-      </defs>
-      <rect x={-22} y={-6} width={3} height={12} rx={1} fill={color.shade} />
-      <rect x={-19} y={-6} width={22} height={12} rx={1.5} fill={color.body} />
-      <rect x={-19} y={-6} width={22} height={12} rx={1.5} fill={`url(#bp-cg-${color.name})`} />
-      <rect x={-16} y={-6.5} width={16} height={13} rx={1} fill="white" opacity=".88" />
-      <rect x={-16} y={-6.5} width={16} height={13} rx={1} fill={color.body} opacity=".12" />
-      <line x1={-16} y1={-6} x2={-16} y2={6} stroke={color.shade} strokeWidth={.4} opacity={.3} />
-      <line x1={0} y1={-6} x2={0} y2={6} stroke={color.shade} strokeWidth={.4} opacity={.3} />
-      <line x1={-14} y1={-2} x2={-2} y2={-2} stroke={color.body} strokeWidth={.6} opacity={.35} />
-      <line x1={-14} y1={0.5} x2={-2} y2={0.5} stroke={color.body} strokeWidth={.6} opacity={.25} />
-      <line x1={-14} y1={3} x2={-2} y2={3} stroke={color.body} strokeWidth={.6} opacity={.2} />
-      <text x={-11} y={-3} fontSize={4} fill={color.body} fontFamily="'Fredoka One',sans-serif" opacity={.7} fontWeight="bold">CRAYON</text>
-      <rect x={3} y={-5.5} width={5} height={11} rx={.5} fill={color.body} />
-      <rect x={3} y={-5.5} width={5} height={11} rx={.5} fill={`url(#bp-cg-${color.name})`} />
-      <polygon points="8,-5 16,0 8,5" fill={color.tip} />
-      <polygon points="8,-5 16,0 8,0" fill="white" opacity=".12" />
-      <polygon points="13,-2 16,0 13,2" fill={color.shade} opacity=".7" />
-      <polygon points="8,-5 16,0 8,5" fill="none" stroke={color.shade} strokeWidth={.4} opacity={.5} />
+      <CrayonSprite color={color} idPrefix="bp" />
     </g>
-  );
-}
-
-function DpadBtn({ label, id, dir, color, pressed, onPress }) {
-  const fired = useRef(false);
-  const handle = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (fired.current) return;
-    fired.current = true;
-    setTimeout(() => { fired.current = false; }, 80);
-    onPress(dir, id);
-  }, [dir, id, onPress]);
-
-  return (
-    <button
-      onTouchStart={handle}
-      onMouseDown={handle}
-      style={{
-        width: 48, height: 48, fontSize: 20, fontFamily: "sans-serif",
-        background: pressed ? `${color.body}35` : `${color.body}15`,
-        border: `2px solid ${pressed ? color.body : color.body + "44"}`,
-        color: color.body, borderRadius: 12, cursor: "pointer",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        WebkitTapHighlightColor: "transparent", transition: "all .1s",
-        transform: pressed ? "scale(.9)" : "scale(1)", outline: "none",
-        touchAction: "manipulation",
-      }}
-    >{label}</button>
   );
 }
 
@@ -306,7 +222,7 @@ export default function TheBlankPage({ onBack }) {
   const [pressedBtn, setPressedBtn] = useState(null);
 
   const touchRef = useRef(null);
-  const moveRef = useRef(null); // ref for latest move fn
+  const moveRef = useRef(null); // ref con la última versión de move
 
   useEffect(() => {
     try { localStorage.setItem("blankpage-completed", JSON.stringify(completedLevels)); } catch {}
@@ -317,6 +233,7 @@ export default function TheBlankPage({ onBack }) {
   const W = level ? level.size * CELL : 0;
   const H = W;
   const color = COLORS[selectedColor];
+  const isTouch = useTouchDevice();
 
   /* ── Shadows (memoized) ── */
   const shadowCells = useMemo(() => {
@@ -379,14 +296,13 @@ export default function TheBlankPage({ onBack }) {
     const nx = playerPos[0] + direction.x;
     const ny = playerPos[1] + direction.y;
 
-    // Out of bounds
     if (nx < 0 || ny < 0 || nx >= level.size || ny >= level.size) return;
 
     const cellType = gridState[ny][nx];
     const key = cellKey(nx, ny);
     const wasRevealed = revealed.has(key);
 
-    // Wall — reveal it but don't move
+    // Muro: se revela pero no se avanza
     if (cellType === WALL) {
       if (!wasRevealed) {
         setRevealed(prev => { const n = new Set(prev); n.add(key); return n; });
@@ -394,7 +310,7 @@ export default function TheBlankPage({ onBack }) {
       return;
     }
 
-    // Save snapshot for undo
+    // Snapshot para deshacer
     setHistory(prev => [...prev, {
       playerPos: [...playerPos],
       revealed: new Set(revealed),
@@ -403,7 +319,6 @@ export default function TheBlankPage({ onBack }) {
       steps,
     }]);
 
-    // Move player
     setPlayerPos([nx, ny]);
     setPlayerDir(direction);
 
@@ -412,12 +327,12 @@ export default function TheBlankPage({ onBack }) {
     let newRevealed = revealed;
 
     if (!wasRevealed) {
-      // Reveal and spend ink
+      // Revelar y gastar tinta
       newRevealed = new Set(revealed);
       newRevealed.add(key);
       newInk = ink - 1;
 
-      // Process items
+      // Objetos
       if (cellType === INK) {
         newInk += 10;
         newGrid = gridState.map(r => [...r]);
@@ -429,7 +344,7 @@ export default function TheBlankPage({ onBack }) {
       } else if (cellType === SPILL) {
         newGrid = gridState.map(r => [...r]);
         newGrid[ny][nx] = FLOOR;
-        // Reveal entire row OR column (whichever reveals more)
+        // Revela la fila O la columna entera (la que descubra más)
         let rowCount = 0, colCount = 0;
         for (let i = 0; i < level.size; i++) {
           if (!newRevealed.has(cellKey(i, ny)) && newGrid[ny][i] !== WALL) rowCount++;
@@ -454,19 +369,19 @@ export default function TheBlankPage({ onBack }) {
       }
     }
 
-    // Check exit
-    if (cellType === EXIT || gridState[ny][nx] === EXIT) {
+    // Salida
+    if (cellType === EXIT) {
       setGameStatus("won");
     }
 
     setSteps(s => s + 1);
   }, [level, playerPos, gridState, revealed, ink, steps, gameStatus]);
 
-  // Keep ref updated for keyboard/touch handlers
   useEffect(() => { moveRef.current = move; }, [move]);
 
   /* ── Undo ── */
   const undo = useCallback(() => {
+    if (gameStatus === "won") return;
     if (undosLeft <= 0 || history.length === 0) return;
     const snap = history[history.length - 1];
     setPlayerPos(snap.playerPos);
@@ -477,7 +392,7 @@ export default function TheBlankPage({ onBack }) {
     setHistory(prev => prev.slice(0, -1));
     setUndosLeft(prev => prev - 1);
     if (snap.ink > 0) setGameStatus("playing");
-  }, [undosLeft, history]);
+  }, [undosLeft, history, gameStatus]);
 
   /* ── Keyboard input ── */
   useEffect(() => {
@@ -529,7 +444,7 @@ export default function TheBlankPage({ onBack }) {
 
   const earnedStars = gameStatus === "won" ? calcStars(ink) : 0;
 
-  // Save completion
+  // Guardar la mejor puntuación del nivel
   useEffect(() => {
     if (gameStatus === "won" && level) {
       setCompletedLevels(prev => {
@@ -579,39 +494,20 @@ export default function TheBlankPage({ onBack }) {
   /* ══════ Render: Level Select ══════ */
   if (screen === "levels") {
     return (
-      <div style={{
-        minHeight: "100vh", background: "#fef9ef",
-        backgroundImage: "linear-gradient(rgba(180,210,240,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(180,210,240,.25) 1px,transparent 1px)",
-        backgroundSize: "20px 20px",
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        fontFamily: "'Patrick Hand',cursive", userSelect: "none", padding: 20, position: "relative",
-      }}>
-        <style>{css}</style>
-        <BackButton onBack={onBack} />
+      <NotebookPage onBack={onBack} doodles="blankpage">
+        <GameHeader
+          title="The Blank Page"
+          subtitle="Lo que no pintas, no existe"
+          titleStyle={{ fontSize: "clamp(24px,5vw,40px)" }}
+        />
 
-        <div style={{ position: "fixed", left: 60, top: 0, bottom: 0, width: 2, background: "rgba(220,80,80,.3)", zIndex: 0 }} />
-        <div style={{ position: "fixed", left: 63, top: 0, bottom: 0, width: 1, background: "rgba(220,80,80,.15)", zIndex: 0 }} />
-
-        <h1 style={{
-          fontFamily: "'Fredoka One',cursive", fontSize: "clamp(24px,5vw,40px)",
-          margin: "0 0 8px", animation: "rainbow 4s linear infinite",
-          textShadow: "2px 2px 0 rgba(0,0,0,.08)", letterSpacing: 2, zIndex: 1,
-        }}>The Blank Page</h1>
-
-        <p style={{ fontSize: "clamp(13px,2.5vw,16px)", color: "#888", margin: "0 0 16px", zIndex: 1, textAlign: "center" }}>
-          Lo que no pintas, no existe
-        </p>
-
-        {/* Color selector */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 20, zIndex: 1 }}>
-          {COLORS.map((c, i) => (
-            <button key={c.name} onClick={() => setSelectedColor(i)} style={{
-              width: 28, height: 28, borderRadius: "50%", border: selectedColor === i ? `3px solid ${c.shade}` : "2px solid rgba(0,0,0,.1)",
-              background: c.body, cursor: "pointer", transform: selectedColor === i ? "scale(1.2)" : "scale(1)",
-              transition: "all .2s", boxShadow: selectedColor === i ? `0 0 8px ${c.body}55` : "none",
-            }} />
-          ))}
-        </div>
+        <ColorPicker
+          colors={COLORS}
+          selected={selectedColor}
+          onSelect={setSelectedColor}
+          label={null}
+          style={{ marginBottom: 20, background: "none", boxShadow: "none", padding: 0, gap: 8 }}
+        />
 
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12,
@@ -621,18 +517,15 @@ export default function TheBlankPage({ onBack }) {
             const stars = completedLevels[lvl.id] || 0;
             const unlocked = lvl.id === 1 || (completedLevels[lvl.id - 1] || 0) >= 1;
             return (
-              <button key={lvl.id} onClick={() => unlocked && selectLevel(lvl.id)} disabled={!unlocked} style={{
+              <button key={lvl.id} className="cg-card" onClick={() => unlocked && selectLevel(lvl.id)} disabled={!unlocked} style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
                 padding: "14px 12px", background: stars > 0 ? "rgba(76,175,80,.08)" : unlocked ? "rgba(255,255,255,.85)" : "rgba(0,0,0,.04)",
                 border: `2.5px solid ${stars > 0 ? "rgba(76,175,80,.3)" : unlocked ? "rgba(0,0,0,.1)" : "rgba(0,0,0,.05)"}`,
                 borderRadius: 16, cursor: unlocked ? "pointer" : "default",
                 boxShadow: unlocked ? "0 3px 12px rgba(0,0,0,.06)" : "none",
-                transition: "all .2s", fontFamily: "'Patrick Hand',cursive", position: "relative",
+                fontFamily: "'Patrick Hand',cursive", position: "relative",
                 opacity: unlocked ? 1 : 0.5,
-              }}
-                onMouseEnter={(e) => { if (unlocked) e.currentTarget.style.transform = "scale(1.06) rotate(-0.5deg)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-              >
+              }}>
                 <span style={{ fontFamily: "'Fredoka One',cursive", fontSize: "clamp(18px,4vw,24px)", color: unlocked ? "#444" : "#aaa" }}>
                   {lvl.id}
                 </span>
@@ -653,7 +546,7 @@ export default function TheBlankPage({ onBack }) {
             );
           })}
         </div>
-      </div>
+      </NotebookPage>
     );
   }
 
@@ -662,232 +555,183 @@ export default function TheBlankPage({ onBack }) {
 
   const inkPct = Math.max(0, ink / level.ink);
   const inkColor = inkPct > 0.5 ? "#4caf50" : inkPct > 0.25 ? "#ff9800" : "#e63946";
+  const boardWidth = `min(100%, ${W + PAD}px)`;
 
   return (
-    <div style={{
-      minHeight: "100vh", background: "#fef9ef",
-      backgroundImage: "linear-gradient(rgba(180,210,240,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(180,210,240,.25) 1px,transparent 1px)",
-      backgroundSize: "20px 20px",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Patrick Hand',cursive", userSelect: "none", padding: "20px 10px", position: "relative",
-    }}>
-      <style>{css}</style>
-      <BackButton onBack={onBack} />
-
-      <div style={{ position: "fixed", left: 60, top: 0, bottom: 0, width: 2, background: "rgba(220,80,80,.3)", zIndex: 0 }} />
-      <div style={{ position: "fixed", left: 63, top: 0, bottom: 0, width: 1, background: "rgba(220,80,80,.15)", zIndex: 0 }} />
-
+    <NotebookPage onBack={onBack} doodles="blankpage" style={{ padding: "20px 10px", touchAction: "none" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, zIndex: 1, flexWrap: "wrap", justifyContent: "center" }}>
-        <button onClick={goToLevels} style={{
-          fontFamily: "'Patrick Hand',cursive", fontSize: 14, color: "#666",
-          background: "rgba(255,255,255,.85)", border: "2px solid rgba(0,0,0,.12)",
-          borderRadius: 14, padding: "5px 12px", cursor: "pointer",
-          boxShadow: "0 2px 8px rgba(0,0,0,.06)",
-        }}>← Niveles</button>
+        <PillButton ghost onClick={goToLevels} style={{ fontFamily: "'Patrick Hand',cursive", fontSize: 14, padding: "5px 12px", borderRadius: 14, letterSpacing: 0 }}>
+          ← Niveles
+        </PillButton>
         <span style={{ fontFamily: "'Fredoka One',cursive", fontSize: "clamp(14px,3vw,18px)", color: "#444" }}>
           {level.name}
         </span>
-        <div style={{ display: "flex", gap: 4 }}>
-          {Array.from({ length: undosLeft }).map((_, i) => (
-            <span key={i} style={{ fontSize: 16, cursor: "pointer", opacity: 0.7 }} onClick={undo} title="Deshacer">🧹</span>
-          ))}
-          {Array.from({ length: MAX_UNDOS - undosLeft }).map((_, i) => (
-            <span key={`u${i}`} style={{ fontSize: 16, opacity: 0.2 }}>🧹</span>
-          ))}
-        </div>
+        <PillButton
+          ghost
+          onClick={undo}
+          disabled={undosLeft === 0 || history.length === 0 || gameStatus === "won"}
+          title="Deshacer último paso"
+          style={{ fontFamily: "'Patrick Hand',cursive", fontSize: 14, padding: "5px 12px", borderRadius: 14, letterSpacing: 0 }}
+        >
+          🧹 ×{undosLeft}
+        </PillButton>
       </div>
 
-      {/* Board with border numbers */}
-      <div style={{ position: "relative", zIndex: 1 }}>
-        {/* Column numbers (top) */}
-        <div style={{ display: "flex", marginLeft: 18, marginBottom: 2 }}>
+      {/* Board (los números de fila/columna viven dentro del SVG y escalan con él) */}
+      <div style={{
+        position: "relative", width: boardWidth, aspectRatio: "1 / 1",
+        border: "3px solid #999", borderRadius: 12, background: "#fffef7",
+        boxShadow: "0 4px 24px rgba(0,0,0,.08),inset 0 0 30px rgba(0,0,0,.02)",
+        overflow: "hidden", touchAction: "none", zIndex: 1,
+      }}>
+        <svg width="100%" height="100%" viewBox={`${-PAD} ${-PAD} ${W + PAD} ${H + PAD}`}
+          style={{ position: "absolute", top: 0, left: 0, display: "block" }}>
+          <defs>
+            <filter id="crayon-rough-bp" x="-5%" y="-5%" width="110%" height="110%">
+              <feTurbulence type="turbulence" baseFrequency=".45" numOctaves="3" seed="3" result="noise" />
+              <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.8" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+          </defs>
+
+          {/* Números de columna (arriba) y fila (izquierda): celdas transitables */}
           {borderNumbers.cols.map((n, i) => (
-            <div key={i} style={{
-              width: CELL, textAlign: "center", fontSize: Math.min(CELL * 0.55, 12),
-              color: "rgba(120,100,80,.4)", fontFamily: "'Patrick Hand',cursive",
-            }}>{n}</div>
+            <text key={`cn${i}`} x={i * CELL + CELL / 2} y={-PAD / 2}
+              textAnchor="middle" dominantBaseline="central" fontSize={10}
+              fill="rgba(120,100,80,.45)" fontFamily="'Patrick Hand',cursive">{n}</text>
           ))}
-        </div>
+          {borderNumbers.rows.map((n, i) => (
+            <text key={`rn${i}`} x={-PAD / 2} y={i * CELL + CELL / 2}
+              textAnchor="middle" dominantBaseline="central" fontSize={10}
+              fill="rgba(120,100,80,.45)" fontFamily="'Patrick Hand',cursive">{n}</text>
+          ))}
 
-        <div style={{ display: "flex" }}>
-          {/* Row numbers (left) */}
-          <div style={{ display: "flex", flexDirection: "column", marginRight: 2, justifyContent: "flex-start" }}>
-            {borderNumbers.rows.map((n, i) => (
-              <div key={i} style={{
-                height: CELL, display: "flex", alignItems: "center", justifyContent: "center",
-                width: 16, fontSize: Math.min(CELL * 0.55, 12),
-                color: "rgba(120,100,80,.4)", fontFamily: "'Patrick Hand',cursive",
-              }}>{n}</div>
-            ))}
-          </div>
+          {gridLines}
 
-          {/* Board */}
+          {/* Celdas */}
+          {Array.from({ length: level.size }).map((_, y) =>
+            Array.from({ length: level.size }).map((_, x) => {
+              const key = cellKey(x, y);
+              const isRevealed = revealed.has(key);
+              const isShadow = shadowCells.has(key);
+              const cx = x * CELL, cy = y * CELL;
+              const ct = gridState[y][x];
+
+              if (!isRevealed) {
+                return (
+                  <g key={key}>
+                    <rect x={cx} y={cy} width={CELL} height={CELL}
+                      fill="#e8e4dc" stroke="rgba(180,170,155,.15)" strokeWidth={0.5} />
+                    {isShadow && (
+                      <rect x={cx} y={cy} width={CELL} height={CELL}
+                        fill="rgba(200,180,120,.08)" />
+                    )}
+                  </g>
+                );
+              }
+
+              if (ct === WALL) {
+                return (
+                  <rect key={key} x={cx} y={cy} width={CELL} height={CELL}
+                    fill="#555" filter="url(#crayon-rough-bp)" opacity={0.7} />
+                );
+              }
+
+              // Suelo / salida / objetos
+              const ox = Math.sin(x * 3.7 + y * 2.1) * 0.6;
+              const oy = Math.cos(x * 2.3 + y * 3.9) * 0.6;
+              return (
+                <g key={key}>
+                  <rect x={cx + ox} y={cy + oy} width={CELL - 1} height={CELL - 1}
+                    fill={color.body} opacity={0.18} filter="url(#crayon-rough-bp)" rx={1} />
+                  {ct === EXIT && (
+                    <text x={cx + CELL / 2} y={cy + CELL / 2 + 1} textAnchor="middle" dominantBaseline="central"
+                      fontSize={CELL * 0.7} style={{ animation: "pulseBig 1.5s ease-in-out infinite", transformOrigin: `${cx + CELL/2}px ${cy + CELL/2}px` }}>
+                      🚪
+                    </text>
+                  )}
+                  {ct === INK && (
+                    <text x={cx + CELL / 2} y={cy + CELL / 2 + 1} textAnchor="middle" dominantBaseline="central"
+                      fontSize={CELL * 0.6} style={{ animation: "wobble 2s ease-in-out infinite" }}>
+                      🖊️
+                    </text>
+                  )}
+                  {ct === ERASER && (
+                    <text x={cx + CELL / 2} y={cy + CELL / 2 + 1} textAnchor="middle" dominantBaseline="central"
+                      fontSize={CELL * 0.6}>
+                      🧽
+                    </text>
+                  )}
+                  {ct === SPILL && (
+                    <text x={cx + CELL / 2} y={cy + CELL / 2 + 1} textAnchor="middle" dominantBaseline="central"
+                      fontSize={CELL * 0.6} style={{ animation: "pulseBig 1.5s ease-in-out infinite", transformOrigin: `${cx + CELL/2}px ${cy + CELL/2}px` }}>
+                      💧
+                    </text>
+                  )}
+                </g>
+              );
+            })
+          )}
+
+          {/* Player */}
+          <CrayonPlayer x={playerPos[0]} y={playerPos[1]} cell={CELL} dir={playerDir} color={color} />
+        </svg>
+
+        {/* Blind overlay */}
+        {gameStatus === "blind" && (
           <div style={{
-            position: "relative", width: W, height: H,
-            maxWidth: "calc(100vw - 60px)", aspectRatio: "1",
-            border: "3px solid #999", borderRadius: 12, background: "#fffef7",
-            boxShadow: "0 4px 24px rgba(0,0,0,.08),inset 0 0 30px rgba(0,0,0,.02)",
-            overflow: "hidden", touchAction: "none",
-          }}>
-            <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`}
-              style={{ position: "absolute", top: 0, left: 0, display: "block" }}>
-              <defs>
-                <filter id="crayon-rough-bp" x="-5%" y="-5%" width="110%" height="110%">
-                  <feTurbulence type="turbulence" baseFrequency=".45" numOctaves="3" seed="3" result="noise" />
-                  <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.8" xChannelSelector="R" yChannelSelector="G" />
-                </filter>
-              </defs>
+            position: "absolute", inset: 0, background: "rgba(30,20,10,.2)",
+            animation: "blindPulse 2s ease-in-out infinite", pointerEvents: "none",
+          }} />
+        )}
 
-              {gridLines}
+        {/* Paper texture */}
+        <div style={{
+          position: "absolute", inset: 0, pointerEvents: "none", opacity: .4,
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='6' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='1' height='1' fill='%23000' opacity='0.02'/%3E%3C/svg%3E")`,
+        }} />
 
-              {/* Render cells */}
-              {Array.from({ length: level.size }).map((_, y) =>
-                Array.from({ length: level.size }).map((_, x) => {
-                  const key = cellKey(x, y);
-                  const isRevealed = revealed.has(key);
-                  const isShadow = shadowCells.has(key);
-                  const cx = x * CELL, cy = y * CELL;
-                  const ct = gridState[y][x];
-
-                  if (!isRevealed) {
-                    return (
-                      <g key={key}>
-                        <rect x={cx} y={cy} width={CELL} height={CELL}
-                          fill="#e8e4dc" stroke="rgba(180,170,155,.15)" strokeWidth={0.5} />
-                        {isShadow && (
-                          <rect x={cx} y={cy} width={CELL} height={CELL}
-                            fill="rgba(200,180,120,.08)" />
-                        )}
-                      </g>
-                    );
-                  }
-
-                  // Revealed
-                  if (ct === WALL) {
-                    return (
-                      <rect key={key} x={cx} y={cy} width={CELL} height={CELL}
-                        fill="#555" filter="url(#crayon-rough-bp)" opacity={0.7} />
-                    );
-                  }
-
-                  // Floor / exit / items
-                  const ox = Math.sin(x * 3.7 + y * 2.1) * 0.6;
-                  const oy = Math.cos(x * 2.3 + y * 3.9) * 0.6;
-                  return (
-                    <g key={key}>
-                      <rect x={cx + ox} y={cy + oy} width={CELL - 1} height={CELL - 1}
-                        fill={color.body} opacity={0.18} filter="url(#crayon-rough-bp)" rx={1} />
-                      {ct === EXIT && (
-                        <text x={cx + CELL / 2} y={cy + CELL / 2 + 1} textAnchor="middle" dominantBaseline="central"
-                          fontSize={CELL * 0.7} style={{ animation: "pulse 1.5s ease-in-out infinite", transformOrigin: `${cx + CELL/2}px ${cy + CELL/2}px` }}>
-                          🚪
-                        </text>
-                      )}
-                      {ct === INK && (
-                        <text x={cx + CELL / 2} y={cy + CELL / 2 + 1} textAnchor="middle" dominantBaseline="central"
-                          fontSize={CELL * 0.6} style={{ animation: "wobble 2s ease-in-out infinite" }}>
-                          🖊️
-                        </text>
-                      )}
-                      {ct === ERASER && (
-                        <text x={cx + CELL / 2} y={cy + CELL / 2 + 1} textAnchor="middle" dominantBaseline="central"
-                          fontSize={CELL * 0.6}>
-                          🩷
-                        </text>
-                      )}
-                      {ct === SPILL && (
-                        <text x={cx + CELL / 2} y={cy + CELL / 2 + 1} textAnchor="middle" dominantBaseline="central"
-                          fontSize={CELL * 0.6} style={{ animation: "pulse 1.5s ease-in-out infinite", transformOrigin: `${cx + CELL/2}px ${cy + CELL/2}px` }}>
-                          💧
-                        </text>
-                      )}
-                    </g>
-                  );
-                })
-              )}
-
-              {/* Player */}
-              <CrayonPlayer x={playerPos[0]} y={playerPos[1]} cell={CELL} dir={playerDir} color={color} />
-            </svg>
-
-            {/* Blind overlay */}
-            {gameStatus === "blind" && (
-              <div style={{
-                position: "absolute", inset: 0, background: "rgba(30,20,10,.2)",
-                animation: "blindPulse 2s ease-in-out infinite", pointerEvents: "none",
-              }} />
-            )}
-
-            {/* Paper texture */}
-            <div style={{
-              position: "absolute", inset: 0, pointerEvents: "none", opacity: .4,
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='6' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='1' height='1' fill='%23000' opacity='0.02'/%3E%3C/svg%3E")`,
-            }} />
-
-            {/* Win overlay */}
-            {gameStatus === "won" && (
-              <div style={{
-                position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center",
-                background: "rgba(254,249,239,.92)", animation: "fadeIn .4s ease", padding: 20, zIndex: 10,
-              }}>
-                <div style={{
-                  fontFamily: "'Fredoka One',cursive", fontSize: "clamp(20px,4.5vw,30px)",
-                  color: "#4caf50", marginBottom: 8, textShadow: "2px 2px 0 rgba(0,0,0,.06)",
-                }}>
-                  ¡Pagina Completa!
-                </div>
-                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                  {[1, 2, 3].map(s => (
-                    <span key={s} style={{
-                      fontSize: 28, transition: "all .3s",
-                      opacity: s <= earnedStars ? 1 : 0.2,
-                      animation: s <= earnedStars ? `fadeIn ${0.3 + s * 0.15}s ease` : "none",
-                    }}>★</span>
-                  ))}
-                </div>
-                <div style={{ fontSize: "clamp(12px,2.5vw,15px)", color: "#888", marginBottom: 12 }}>
-                  Tinta restante: {ink}/{level.ink}
-                </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-                  {LEVELS.findIndex(l => l.id === level.id) < LEVELS.length - 1 && (
-                    <button onClick={nextLevel} style={{
-                      fontFamily: "'Fredoka One',cursive", fontSize: "clamp(12px,2.5vw,15px)", color: "#fff",
-                      background: "#4caf50", border: "none", padding: "8px 20px", borderRadius: 25,
-                      cursor: "pointer", boxShadow: "0 4px 14px rgba(76,175,80,.3)",
-                    }}
-                      onMouseEnter={(e) => { e.target.style.transform = "scale(1.08)"; }}
-                      onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-                    >Siguiente →</button>
-                  )}
-                  {earnedStars < 3 && (
-                    <button onClick={retryLevel} style={{
-                      fontFamily: "'Fredoka One',cursive", fontSize: "clamp(12px,2.5vw,15px)", color: "#ff9800",
-                      background: "rgba(255,255,255,.85)", border: "2px solid rgba(255,152,0,.3)",
-                      padding: "8px 20px", borderRadius: 25, cursor: "pointer",
-                    }}
-                      onMouseEnter={(e) => { e.target.style.transform = "scale(1.08)"; }}
-                      onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-                    >↻ Reintentar</button>
-                  )}
-                  <button onClick={goToLevels} style={{
-                    fontFamily: "'Fredoka One',cursive", fontSize: "clamp(12px,2.5vw,15px)", color: "#666",
-                    background: "rgba(255,255,255,.85)", border: "2px solid rgba(0,0,0,.12)",
-                    padding: "8px 20px", borderRadius: 25, cursor: "pointer",
-                  }}
-                    onMouseEnter={(e) => { e.target.style.transform = "scale(1.08)"; }}
-                    onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-                  >Niveles</button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Win overlay */}
+        {gameStatus === "won" && (
+          <GameOverlay
+            title="¡Página completa!"
+            titleColor="#4caf50"
+            actions={
+              <>
+                {LEVELS.findIndex(l => l.id === level.id) < LEVELS.length - 1 && (
+                  <PillButton color="#4caf50" onClick={nextLevel} style={{ fontSize: "clamp(12px,2.5vw,15px)", padding: "8px 20px" }}>
+                    Siguiente →
+                  </PillButton>
+                )}
+                {earnedStars < 3 && (
+                  <PillButton ghost onClick={retryLevel} style={{ color: "#ff9800", border: "2px solid rgba(255,152,0,.3)", fontSize: "clamp(12px,2.5vw,15px)", padding: "8px 20px" }}>
+                    ↻ Reintentar
+                  </PillButton>
+                )}
+                <PillButton ghost onClick={goToLevels} style={{ fontSize: "clamp(12px,2.5vw,15px)", padding: "8px 20px" }}>
+                  Niveles
+                </PillButton>
+              </>
+            }
+          >
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              {[1, 2, 3].map(s => (
+                <span key={s} style={{
+                  fontSize: 28, transition: "all .3s",
+                  opacity: s <= earnedStars ? 1 : 0.2,
+                  animation: s <= earnedStars ? `fadeIn ${0.3 + s * 0.15}s ease` : "none",
+                }}>★</span>
+              ))}
+            </div>
+            <div style={{ fontSize: "clamp(12px,2.5vw,15px)", color: "#888" }}>
+              Tinta restante: {ink}/{level.ink}
+            </div>
+          </GameOverlay>
+        )}
       </div>
 
       {/* Ink bar */}
-      <div style={{ width: W + 18, maxWidth: "calc(100vw - 40px)", marginTop: 10, zIndex: 1 }}>
+      <div style={{ width: boardWidth, marginTop: 10, zIndex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
           <div style={{
             flex: 1, height: 14, background: "rgba(0,0,0,.06)", borderRadius: 7,
@@ -915,21 +759,19 @@ export default function TheBlankPage({ onBack }) {
         Pasos: {steps} | Revelado: {revealedPct}%
       </div>
 
-      {/* D-pad */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "48px 48px 48px", gridTemplateRows: "48px 48px 48px",
-        gap: 4, marginTop: 12, zIndex: 1,
-      }}>
-        <div />
-        <DpadBtn label="▲" id="up" dir={DIR.UP} color={color} pressed={pressedBtn === "up"} onPress={onDpad} />
-        <div />
-        <DpadBtn label="◀" id="left" dir={DIR.LEFT} color={color} pressed={pressedBtn === "left"} onPress={onDpad} />
-        <div style={{ width: 48, height: 48 }} />
-        <DpadBtn label="▶" id="right" dir={DIR.RIGHT} color={color} pressed={pressedBtn === "right"} onPress={onDpad} />
-        <div />
-        <DpadBtn label="▼" id="down" dir={DIR.DOWN} color={color} pressed={pressedBtn === "down"} onPress={onDpad} />
-        <div />
-      </div>
-    </div>
+      {/* Controles: D-pad en táctil, teclas en escritorio */}
+      {isTouch ? (
+        <Dpad
+          color={color}
+          pressed={pressedBtn}
+          onPress={onDpad}
+          style={{ marginTop: 12 }}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <KeyHints color={color} style={{ marginTop: 12 }} />
+      )}
+    </NotebookPage>
   );
 }

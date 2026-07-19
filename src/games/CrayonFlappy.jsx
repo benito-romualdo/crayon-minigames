@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import BackButton from "../components/BackButton";
+import { COLORS, loadJSON, saveJSON } from "../shared/theme";
+import { NotebookPage, PageTitle, PillButton, ColorPicker, GameOverlay, useTouchDevice } from "../shared/components";
 
 /* ── Constants ── */
 const CANVAS_W = 400;
@@ -20,62 +21,35 @@ const PIPE_SPACING = 280;
 const STAR_SIZE = 20;
 const STAR_CHANCE = 0.6;
 const TRAIL_MAX = 150;
-
-const COLORS = [
-  { name: "Rojo", body: "#e63946", tip: "#c1121f", shade: "#a4161a" },
-  { name: "Azul", body: "#2196F3", tip: "#1565C0", shade: "#0D47A1" },
-  { name: "Verde", body: "#4caf50", tip: "#2e7d32", shade: "#1b5e20" },
-  { name: "Naranja", body: "#ff9800", tip: "#e65100", shade: "#bf360c" },
-  { name: "Morado", body: "#9c27b0", tip: "#6a1b9a", shade: "#4a148c" },
-  { name: "Rosa", body: "#e91e8c", tip: "#c2185b", shade: "#880e4f" },
-];
+const BEST_KEY = "flappy-best";
 
 /* ── Grace period (frames) before pipes can kill ── */
-const GRACE_FRAMES = 120; // ~2 s at 60 fps
-
-/* ── CSS keyframes ── */
-const css = `
-@keyframes rainbow{0%{color:#e63946}16%{color:#ff9800}33%{color:#4caf50}50%{color:#2196F3}66%{color:#9c27b0}83%{color:#e91e8c}100%{color:#e63946}}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes wobble{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
-@keyframes countPop{0%{transform:scale(2);opacity:0}40%{opacity:1}100%{transform:scale(1);opacity:1}}
-`;
+const GRACE_FRAMES = 120; // ~2 s a 60 fps
 
 /* ── Canvas drawing helpers ── */
 
 function drawBackground(ctx, scrollX) {
-  // Base color
   ctx.fillStyle = "#fef9ef";
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Layer 1 (far): horizontal notebook lines at 0.3x parallax
-  ctx.strokeStyle = "rgba(180,210,240,0.15)";
+  // Cuadrícula del cuaderno: horizontales fijas, verticales con parallax
+  ctx.strokeStyle = "rgba(180,210,240,0.22)";
   ctx.lineWidth = 0.5;
-  const offset1 = (scrollX * 0.3) % 20;
   for (let y = 0; y < CANVAS_H; y += 20) {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(CANVAS_W, y);
     ctx.stroke();
   }
-
-  // Layer 2 (near): grid at 0.6x parallax
-  ctx.strokeStyle = "rgba(180,210,240,0.10)";
-  const offset2 = (scrollX * 0.6) % 20;
-  for (let y = 0; y < CANVAS_H; y += 20) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(CANVAS_W, y);
-    ctx.stroke();
-  }
-  for (let x = -offset2; x < CANVAS_W; x += 20) {
+  const offset = (scrollX * 0.6) % 20;
+  for (let x = -offset; x < CANVAS_W; x += 20) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, CANVAS_H);
     ctx.stroke();
   }
 
-  // Red margin line (fixed)
+  // Línea de margen roja (fija)
   ctx.strokeStyle = "rgba(220,80,80,0.3)";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -89,7 +63,7 @@ function drawBackground(ctx, scrollX) {
   ctx.lineTo(63, CANVAS_H);
   ctx.stroke();
 
-  // Floor and ceiling borders
+  // Bordes de suelo y techo
   ctx.fillStyle = "rgba(160,130,100,0.25)";
   ctx.fillRect(0, 0, CANVAS_W, 4);
   ctx.fillRect(0, CANVAS_H - 4, CANVAS_W, 4);
@@ -98,16 +72,14 @@ function drawBackground(ctx, scrollX) {
 function drawPipe(ctx, pipe, isTop) {
   const col = pipe.color;
   const x = pipe.x;
-  let y, h, tipDir;
+  let y, h;
 
   if (isTop) {
     y = 0;
     h = pipe.topH;
-    tipDir = 1; // tip points down
   } else {
     y = pipe.topH + pipe.gap;
     h = CANVAS_H - y;
-    tipDir = -1; // tip points up
   }
 
   if (h <= 12) return;
@@ -117,12 +89,12 @@ function drawPipe(ctx, pipe, isTop) {
 
   ctx.save();
 
-  // Body
+  // Cuerpo
   const bodyY = isTop ? y : y + tipH;
   ctx.fillStyle = col.body;
   ctx.fillRect(x + 2, bodyY, PIPE_W - 4, bodyH);
 
-  // Gradient shine on body
+  // Brillo con degradado
   const grad = ctx.createLinearGradient(x, 0, x + PIPE_W, 0);
   grad.addColorStop(0, "rgba(255,255,255,0.18)");
   grad.addColorStop(0.4, "rgba(255,255,255,0)");
@@ -130,12 +102,11 @@ function drawPipe(ctx, pipe, isTop) {
   ctx.fillStyle = grad;
   ctx.fillRect(x + 2, bodyY, PIPE_W - 4, bodyH);
 
-  // Wrapper / label section (white band)
+  // Banda del envoltorio con etiqueta
   const wrapY = isTop ? bodyY + bodyH - 30 : bodyY;
   const wrapH = Math.min(30, bodyH);
   ctx.fillStyle = "rgba(255,255,255,0.5)";
   ctx.fillRect(x + 4, wrapY, PIPE_W - 8, wrapH);
-  // "CRAYON" text on wrapper
   ctx.save();
   ctx.fillStyle = col.shade;
   ctx.font = "bold 7px sans-serif";
@@ -144,7 +115,7 @@ function drawPipe(ctx, pipe, isTop) {
   ctx.fillText("CRAYON", x + PIPE_W / 2, wrapY + wrapH / 2 + 2.5);
   ctx.restore();
 
-  // Tip (triangle)
+  // Punta triangular
   const tipBaseY = isTop ? y + bodyH : y + tipH;
   const tipPointY = isTop ? y + bodyH + tipH : y;
   ctx.fillStyle = col.tip;
@@ -155,7 +126,7 @@ function drawPipe(ctx, pipe, isTop) {
   ctx.closePath();
   ctx.fill();
 
-  // Slight outline
+  // Contorno sutil
   ctx.strokeStyle = col.shade;
   ctx.lineWidth = 1;
   ctx.globalAlpha = 0.3;
@@ -174,21 +145,20 @@ function drawPlane(ctx, planeY, vy, color) {
   ctx.translate(cx, cy);
   ctx.rotate(rotation);
 
-  // Paper airplane shape (pointing right)
-  // Main body triangle
+  // Avión de papel apuntando a la derecha
   ctx.beginPath();
-  ctx.moveTo(PLANE_W / 2, 0);           // nose
-  ctx.lineTo(-PLANE_W / 2, -PLANE_H / 2); // top back
-  ctx.lineTo(-PLANE_W / 4, 0);          // center notch
-  ctx.lineTo(-PLANE_W / 2, PLANE_H / 2);  // bottom back
+  ctx.moveTo(PLANE_W / 2, 0);
+  ctx.lineTo(-PLANE_W / 2, -PLANE_H / 2);
+  ctx.lineTo(-PLANE_W / 4, 0);
+  ctx.lineTo(-PLANE_W / 2, PLANE_H / 2);
   ctx.closePath();
-  ctx.fillStyle = `rgba(255,255,255,0.95)`;
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
   ctx.fill();
   ctx.strokeStyle = color.body;
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Center fold line
+  // Pliegue central
   ctx.beginPath();
   ctx.moveTo(PLANE_W / 2, 0);
   ctx.lineTo(-PLANE_W / 4, 0);
@@ -198,7 +168,7 @@ function drawPlane(ctx, planeY, vy, color) {
   ctx.stroke();
   ctx.globalAlpha = 1;
 
-  // Wing fold line (upper)
+  // Pliegue del ala superior
   ctx.beginPath();
   ctx.moveTo(PLANE_W / 4, -2);
   ctx.lineTo(-PLANE_W / 3, -PLANE_H / 3);
@@ -219,7 +189,6 @@ function drawTrail(ctx, trail, color) {
     const t = 1 - i / trail.length;
     const p0 = trail[i - 1];
     const p1 = trail[i];
-    // wobble for crayon texture
     const wobX = Math.sin(i * 0.8) * 1.2;
     const wobY = Math.cos(i * 1.1) * 1.2;
 
@@ -246,7 +215,6 @@ function drawStar(ctx, star, frameCount) {
   ctx.rotate(rot);
   ctx.scale(pulse, pulse);
 
-  // 5-pointed star
   ctx.beginPath();
   for (let i = 0; i < 5; i++) {
     const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
@@ -261,7 +229,6 @@ function drawStar(ctx, star, frameCount) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Inner glow
   ctx.fillStyle = "rgba(255,255,200,0.5)";
   ctx.beginPath();
   ctx.arc(0, 0, 4, 0, Math.PI * 2);
@@ -282,9 +249,9 @@ function drawParticles(ctx, particles) {
   }
 }
 
-function drawHUD(ctx, score, stars, best, playing) {
+function drawHUD(ctx, score, stars) {
   ctx.save();
-  // Score (big, centered)
+  // Puntuación grande centrada
   ctx.font = "bold 36px 'Fredoka One', cursive, sans-serif";
   ctx.textAlign = "center";
   ctx.fillStyle = "rgba(0,0,0,0.12)";
@@ -292,19 +259,11 @@ function drawHUD(ctx, score, stars, best, playing) {
   ctx.fillStyle = "#333";
   ctx.fillText(score, CANVAS_W / 2, 50);
 
-  // Stars (left)
+  // Estrellas recogidas (izquierda)
   ctx.font = "16px sans-serif";
   ctx.textAlign = "left";
   ctx.fillStyle = "#e6a800";
-  ctx.fillText("\u2605 " + stars, 12, 30);
-
-  // Best (right, only when not playing)
-  if (!playing) {
-    ctx.font = "bold 14px sans-serif";
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#999";
-    ctx.fillText("Best: " + best, CANVAS_W - 12, 30);
-  }
+  ctx.fillText("★ " + stars, 12, 30);
 
   ctx.restore();
 }
@@ -346,9 +305,7 @@ export default function CrayonFlappy({ onBack }) {
   const [countdown, setCountdown] = useState(null); // 3 | 2 | 1 | null
   const [score, setScore] = useState(0);
   const [starCount, setStarCount] = useState(0);
-  const [best, setBest] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("flappy-best") || "0"); } catch { return 0; }
-  });
+  const [best, setBest] = useState(() => loadJSON(BEST_KEY, 0));
   const [selectedColor, setSelectedColor] = useState(0);
 
   const canvasRef = useRef(null);
@@ -358,11 +315,11 @@ export default function CrayonFlappy({ onBack }) {
   const rafRef = useRef(null);
   const countdownTimerRef = useRef(null);
 
-  // Keep refs in sync
+  // Mantener refs sincronizados
   useEffect(() => { gsRef.current = gameState; }, [gameState]);
   useEffect(() => { colorRef.current = COLORS[selectedColor]; }, [selectedColor]);
 
-  // Cleanup countdown timer on unmount
+  // Limpiar el temporizador de cuenta atrás al desmontar
   useEffect(() => {
     return () => {
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
@@ -380,16 +337,14 @@ export default function CrayonFlappy({ onBack }) {
       frameCount: 0,
       score: 0,
       starCount: 0,
-      pipeGap: PIPE_GAP,
-      lastPipeX: CANVAS_W + 100,
-      graceFrames: GRACE_FRAMES, // immunity frames at start
+      graceFrames: GRACE_FRAMES, // inmunidad inicial
     };
   }
 
-  // Kick off the 3-2-1 countdown, then transition to "playing"
+  // Cuenta atrás 3-2-1 y transición a "playing"
   const beginCountdown = useCallback(() => {
     if (gsRef.current === "countdown" || gsRef.current === "playing") return;
-    // Pre-initialise game state so canvas keeps rendering the idle plane
+    // Pre-inicializa el estado para que el canvas siga dibujando el avión
     const g = initGame();
     gameRef.current = g;
     gsRef.current = "countdown";
@@ -408,7 +363,7 @@ export default function CrayonFlappy({ onBack }) {
         clearInterval(countdownTimerRef.current);
         countdownTimerRef.current = null;
         setCountdown(null);
-        // Give the plane an upward boost so it starts mid-air
+        // Impulso inicial para que el avión empiece en el aire
         if (gameRef.current) gameRef.current.plane.vy = FLAP_FORCE;
         gsRef.current = "playing";
         setGameState("playing");
@@ -416,69 +371,55 @@ export default function CrayonFlappy({ onBack }) {
     }, 1000);
   }, []);
 
-  const startGame = useCallback(() => {
-    // Clear any running countdown
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
-    const g = initGame();
-    gameRef.current = g;
-    gsRef.current = "playing"; // sync immediately for game loop
-    setCountdown(null);
-    setScore(0);
-    setStarCount(0);
-    setGameState("playing");
-  }, []);
-
   const gameOver = useCallback(() => {
-    if (gsRef.current === "over") return; // prevent double-call
+    if (gsRef.current === "over") return;
     const g = gameRef.current;
     if (!g) return;
-    gsRef.current = "over"; // sync immediately
+    gsRef.current = "over";
     setScore(g.score);
     setStarCount(g.starCount);
     setBest(prev => {
       const newBest = Math.max(prev, g.score);
-      try { localStorage.setItem("flappy-best", JSON.stringify(newBest)); } catch {}
+      saveJSON(BEST_KEY, newBest);
       return newBest;
     });
     setGameState("over");
   }, []);
 
   const flap = useCallback(() => {
-    if (gsRef.current === "idle") {
+    const gs = gsRef.current;
+    if (gs === "idle") {
       beginCountdown();
-      return; // don't apply force yet; player will flap on their own
+      return;
     }
-    if (gsRef.current === "over") return;
+    if (gs !== "playing") return; // over o countdown
     const g = gameRef.current;
     if (!g) return;
     g.plane.vy = FLAP_FORCE;
     g.particles.push(spawnFlapParticle(g.plane.y, colorRef.current));
   }, [beginCountdown]);
 
-  // Input handlers
+  // Teclado: aletear y reiniciar tras estrellarse
   useEffect(() => {
     function onKey(e) {
-      if (e.code === "Space" || e.key === "ArrowUp" || e.key === "w" || e.key === "W") {
+      const isFlapKey = e.code === "Space" || e.key === "ArrowUp" || e.key === "w" || e.key === "W";
+      const isRestartKey = e.code === "Space" || e.key === "Enter";
+      if (gsRef.current === "over" && isRestartKey) {
+        e.preventDefault();
+        beginCountdown();
+        return;
+      }
+      if (isFlapKey) {
         e.preventDefault();
         flap();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [flap]);
+  }, [flap, beginCountdown]);
 
-  const handleClick = useCallback((e) => {
-    e.preventDefault();
-    flap();
-  }, [flap]);
-
-  const handleTouch = useCallback((e) => {
-    e.preventDefault();
-    flap();
-  }, [flap]);
+  // pointerdown: un solo evento por toque o clic (sin dobles "flaps" en móvil)
+  const handleTap = useCallback(() => { flap(); }, [flap]);
 
   // Game loop
   useEffect(() => {
@@ -487,15 +428,20 @@ export default function CrayonFlappy({ onBack }) {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
 
+    // Nitidez en pantallas de alta densidad
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = CANVAS_W * dpr;
+    canvas.height = CANVAS_H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     function loop() {
       const g = gameRef.current;
       const gs = gsRef.current;
       const playing = gs === "playing";
-      const countdown = gs === "countdown";
-      const color = colorRef.current;
+      const inCountdown = gs === "countdown";
 
-      if (playing || countdown) {
-        // Physics: gravity only active while playing (not during countdown)
+      if (playing || inCountdown) {
+        // Física: la gravedad solo actúa durante la partida
         if (playing) {
           g.plane.vy += GRAVITY;
           if (g.plane.vy > MAX_FALL_SPEED) g.plane.vy = MAX_FALL_SPEED;
@@ -506,28 +452,26 @@ export default function CrayonFlappy({ onBack }) {
         g.scrollX += PIPE_SPEED;
 
         if (playing) {
-          // Move pipes left
+          // Mover tuberías y estrellas
           for (const pipe of g.pipes) pipe.x -= PIPE_SPEED;
           for (const star of g.stars) star.x -= PIPE_SPEED;
 
-          // Generate new pipes
+          // Generar tuberías nuevas
           const rightmostPipe = g.pipes.length > 0 ? Math.max(...g.pipes.map(p => p.x)) : 0;
           if (g.pipes.length === 0 || rightmostPipe < CANVAS_W - PIPE_SPACING) {
             const gap = Math.max(PIPE_GAP_MIN, PIPE_GAP - g.score * PIPE_GAP_SHRINK);
             const minTop = 60;
             const maxTop = CANVAS_H - gap - 60;
             const topH = minTop + Math.random() * (maxTop - minTop);
-            const newPipe = {
+            g.pipes.push({
               x: CANVAS_W + 20,
               topH,
               gap,
               color: COLORS[Math.floor(Math.random() * COLORS.length)],
               scored: false,
-            };
-            g.pipes.push(newPipe);
-            g.pipeGap = gap;
+            });
 
-            // Maybe spawn star in the gap
+            // A veces aparece una estrella en el hueco
             if (Math.random() < STAR_CHANCE) {
               g.stars.push({
                 x: CANVAS_W + 20 + PIPE_W / 2,
@@ -537,21 +481,20 @@ export default function CrayonFlappy({ onBack }) {
             }
           }
 
-          // Remove offscreen pipes/stars
+          // Eliminar elementos fuera de pantalla
           g.pipes = g.pipes.filter(p => p.x + PIPE_W > -20);
           g.stars = g.stars.filter(s => s.x > -STAR_SIZE && !s.collected);
 
-          // Scoring
+          // Puntuación
           for (const pipe of g.pipes) {
             if (!pipe.scored && pipe.x + PIPE_W < PLANE_X) {
               pipe.scored = true;
               g.score++;
-              // Confetti
               g.particles.push(...spawnConfetti(PLANE_X + PLANE_W, g.plane.y + PLANE_H / 2));
             }
           }
 
-          // Star collection
+          // Recoger estrellas
           for (const star of g.stars) {
             if (star.collected) continue;
             const dx = (PLANE_X + PLANE_W / 2) - star.x;
@@ -562,27 +505,25 @@ export default function CrayonFlappy({ onBack }) {
             }
           }
 
-          // Count down grace frames
+          // Contar frames de gracia
           if (g.graceFrames > 0) g.graceFrames--;
 
-          // Collision: ceiling / floor (always active)
+          // Colisión: techo / suelo (siempre activa)
           if (g.plane.y < 0 || g.plane.y + PLANE_H > CANVAS_H) {
             gameOver();
           }
 
-          // Collision: pipes (hitbox reduced) — skipped during grace period
+          // Colisión con tuberías (hitbox reducida) — omitida durante la gracia
           if (g.graceFrames === 0) {
             const hbW = PLANE_W * HITBOX_SCALE;
             const hbH = PLANE_H * HITBOX_SCALE;
             const hbX = PLANE_X + (PLANE_W - hbW) / 2;
             const hbY = g.plane.y + (PLANE_H - hbH) / 2;
             for (const pipe of g.pipes) {
-              // Top pipe
               if (hbX + hbW > pipe.x && hbX < pipe.x + PIPE_W && hbY < pipe.topH) {
                 gameOver();
                 break;
               }
-              // Bottom pipe
               const bottomY = pipe.topH + pipe.gap;
               if (hbX + hbW > pipe.x && hbX < pipe.x + PIPE_W && hbY + hbH > bottomY) {
                 gameOver();
@@ -592,21 +533,17 @@ export default function CrayonFlappy({ onBack }) {
           }
         }
 
-        // During countdown: avion stays static (no gravity, no collision checks)
-
-        // Trail
+        // Trail (también en cuenta atrás: el fondo ya se desplaza)
         g.trail.unshift({ x: PLANE_X + PLANE_W / 2, y: g.plane.y + PLANE_H / 2 });
         if (g.trail.length > TRAIL_MAX) g.trail.length = TRAIL_MAX;
-        // Shift trail left to simulate scrolling
         for (let i = 1; i < g.trail.length; i++) {
           g.trail[i].x -= PIPE_SPEED;
         }
-        // Remove trail points that went offscreen
         while (g.trail.length > 1 && g.trail[g.trail.length - 1].x < -10) {
           g.trail.pop();
         }
 
-        // Particles
+        // Partículas
         for (const p of g.particles) {
           p.x += p.vx;
           p.y += p.vy;
@@ -636,7 +573,7 @@ export default function CrayonFlappy({ onBack }) {
       drawParticles(ctx, g.particles);
 
       if (playing) {
-        drawHUD(ctx, g.score, g.starCount, best, true);
+        drawHUD(ctx, g.score, g.starCount);
       }
 
       rafRef.current = requestAnimationFrame(loop);
@@ -644,66 +581,32 @@ export default function CrayonFlappy({ onBack }) {
 
     rafRef.current = requestAnimationFrame(loop);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [gameOver, best]);
+  }, [gameOver]);
 
   const color = COLORS[selectedColor];
+  const inGame = gameState === "playing" || gameState === "countdown";
+  const isTouch = useTouchDevice();
 
   return (
-    <div style={{
-      minHeight: "100vh", background: "#fef9ef",
-      backgroundImage: "linear-gradient(rgba(180,210,240,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(180,210,240,.25) 1px,transparent 1px)",
-      backgroundSize: "20px 20px",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Patrick Hand',cursive", userSelect: "none", overflow: "hidden",
-      position: "relative", touchAction: "none",
-    }}>
-      <style>{css}</style>
+    <NotebookPage onBack={onBack} doodles="flappy" style={{ touchAction: inGame ? "none" : "auto" }}>
+      <PageTitle>Crayon Flappy</PageTitle>
 
-      {onBack && <BackButton onBack={onBack} />}
-
-      {/* Margin lines */}
-      <div style={{ position: "fixed", left: 60, top: 0, bottom: 0, width: 2, background: "rgba(220,80,80,.3)", zIndex: 0 }} />
-      <div style={{ position: "fixed", left: 63, top: 0, bottom: 0, width: 1, background: "rgba(220,80,80,.15)", zIndex: 0 }} />
-
-      {/* Title */}
-      <h1 style={{
-        fontFamily: "'Fredoka One',cursive", fontSize: "clamp(22px,5vw,36px)",
-        margin: "0 0 4px", animation: "rainbow 4s linear infinite",
-        textShadow: "2px 2px 0 rgba(0,0,0,.08)", letterSpacing: 2, zIndex: 1,
-      }}>Crayon Flappy</h1>
-
-      {/* Color picker (when not playing or counting down) */}
-      {gameState !== "playing" && gameState !== "countdown" && (
-        <div style={{
-          display: "flex", gap: 6, marginBottom: 8, animation: "fadeIn .5s ease",
-          background: "rgba(255,255,255,.7)", padding: "6px 14px", borderRadius: 20,
-          boxShadow: "0 2px 8px rgba(0,0,0,.06)", zIndex: 1,
-        }}>
-          <span style={{ fontSize: 13, color: "#666", alignSelf: "center", marginRight: 4 }}>Color:</span>
-          {COLORS.map((c, i) => (
-            <button key={c.name} onClick={() => setSelectedColor(i)} title={c.name} style={{
-              width: 28, height: 28, borderRadius: "50%", background: c.body,
-              border: selectedColor === i ? "3px solid #333" : "2px solid rgba(0,0,0,.15)",
-              cursor: "pointer", transition: "all .2s",
-              transform: selectedColor === i ? "scale(1.2)" : "scale(1)",
-              boxShadow: selectedColor === i ? `0 0 10px ${c.body}55` : "none",
-            }} />
-          ))}
-        </div>
+      {/* Color picker (cuando no se está jugando) */}
+      {!inGame && (
+        <ColorPicker colors={COLORS} selected={selectedColor} onSelect={setSelectedColor} style={{ marginBottom: 8 }} />
       )}
 
-      {/* Score display (while playing or counting down) */}
-      {(gameState === "playing" || gameState === "countdown") && (
+      {/* Marcador (durante la partida) */}
+      {inGame && (
         <div style={{
           display: "flex", justifyContent: "space-between",
-          width: Math.min(CANVAS_W, typeof window !== "undefined" ? window.innerWidth - 32 : CANVAS_W),
-          maxWidth: CANVAS_W, marginBottom: 6, fontSize: "clamp(14px,3vw,18px)", zIndex: 1,
+          width: `min(100%, ${CANVAS_W}px)`, marginBottom: 6, fontSize: "clamp(14px,3vw,18px)", zIndex: 1,
         }}>
           <span style={{ color: "#555" }}>
             Puntos: <span style={{ color: color.body, fontWeight: "bold", fontFamily: "'Fredoka One',cursive" }}>{score}</span>
           </span>
           <span style={{ color: "#555" }}>
-            Record: <span style={{ color: "#ff9800", fontWeight: "bold", fontFamily: "'Fredoka One',cursive" }}>{best}</span>
+            Récord: <span style={{ color: "#ff9800", fontWeight: "bold", fontFamily: "'Fredoka One',cursive" }}>{best}</span>
           </span>
         </div>
       )}
@@ -723,41 +626,31 @@ export default function CrayonFlappy({ onBack }) {
             width: "100%", height: "100%", borderRadius: 12,
             border: `3px solid ${color.body}`,
             boxShadow: `0 4px 24px rgba(0,0,0,.08),inset 0 0 30px rgba(0,0,0,.02),0 0 0 1px ${color.body}22`,
-            cursor: "pointer", display: "block",
+            cursor: "pointer", display: "block", touchAction: "none",
           }}
-          onClick={handleClick}
-          onTouchStart={handleTouch}
+          onPointerDown={handleTap}
         />
 
         {/* IDLE overlay */}
         {gameState === "idle" && (
-          <div style={{
-            position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center",
-            background: "rgba(254,249,239,.92)", animation: "fadeIn .5s ease",
-            padding: 20, borderRadius: 12,
-          }}>
-            <div style={{ fontSize: "clamp(50px,12vw,80px)", marginBottom: 8, animation: "wobble 2s ease-in-out infinite" }}>
-              ✈️
-            </div>
+          <GameOverlay
+            emoji="✈️"
+            emojiAnimation="wobbleBig 2s ease-in-out infinite"
+            borderRadius={12}
+            hint={isTouch ? "Toca la pantalla para aletear" : "Espacio / Flecha arriba / W"}
+            actions={
+              <PillButton color={color.body} onClick={(e) => { e.stopPropagation(); beginCountdown(); }} style={{ fontSize: "clamp(14px,3vw,18px)", padding: "12px 32px" }}>
+                Toca para volar
+              </PillButton>
+            }
+          >
             <div style={{
               fontFamily: "'Fredoka One',cursive", fontSize: "clamp(14px,3vw,20px)",
-              color: "#555", textAlign: "center", marginBottom: 16, lineHeight: 1.6,
+              color: "#555", textAlign: "center", lineHeight: 1.6,
             }}>
               Vuela, pinta el cielo<br />y no te estrelles
             </div>
-            <button onClick={(e) => { e.stopPropagation(); beginCountdown(); }} style={{
-              fontFamily: "'Fredoka One',cursive", fontSize: "clamp(14px,3vw,18px)", color: "#fff",
-              background: color.body, border: "none", padding: "12px 32px", borderRadius: 25,
-              cursor: "pointer", boxShadow: `0 4px 14px ${color.body}44`, transition: "all .2s", letterSpacing: 1,
-            }}
-              onMouseEnter={(e) => { e.target.style.transform = "scale(1.08)"; }}
-              onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-            >Toca para volar</button>
-            <div style={{ fontSize: "clamp(11px,2vw,14px)", marginTop: 16, color: "#999", textAlign: "center", lineHeight: 1.8 }}>
-              Tap / Espacio / Flecha arriba / W
-            </div>
-          </div>
+          </GameOverlay>
         )}
 
         {/* COUNTDOWN overlay */}
@@ -771,7 +664,7 @@ export default function CrayonFlappy({ onBack }) {
               fontFamily: "'Fredoka One',cursive",
               fontSize: "clamp(80px,20vw,130px)",
               color: color.body,
-              textShadow: `3px 3px 0 rgba(0,0,0,.1)`,
+              textShadow: "3px 3px 0 rgba(0,0,0,.1)",
               animation: "countPop .9s ease forwards",
               lineHeight: 1,
             }}>
@@ -790,18 +683,18 @@ export default function CrayonFlappy({ onBack }) {
 
         {/* GAME OVER overlay */}
         {gameState === "over" && (
-          <div style={{
-            position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center",
-            background: "rgba(254,249,239,.92)", animation: "fadeIn .4s ease",
-            padding: 20, borderRadius: 12,
-          }}>
-            <div style={{
-              fontFamily: "'Fredoka One',cursive", fontSize: "clamp(22px,5vw,32px)",
-              color: "#e63946", marginBottom: 8, textShadow: "2px 2px 0 rgba(0,0,0,.06)",
-            }}>
-              Se estrello! ✈️💥
-            </div>
+          <GameOverlay
+            emoji="✈️💥"
+            emojiAnimation="shake .5s ease"
+            title="¡Se estrelló!"
+            titleColor="#e63946"
+            borderRadius={12}
+            actions={
+              <PillButton color={color.body} onClick={(e) => { e.stopPropagation(); beginCountdown(); }} style={{ fontSize: "clamp(14px,3vw,18px)", padding: "12px 32px" }}>
+                ↻ Otra vez
+              </PillButton>
+            }
+          >
             <div style={{
               fontFamily: "'Fredoka One',cursive", fontSize: "clamp(16px,3vw,22px)",
               color: color.body, marginBottom: 4,
@@ -817,29 +710,21 @@ export default function CrayonFlappy({ onBack }) {
             {score >= best && score > 0 && (
               <div style={{
                 fontFamily: "'Fredoka One',cursive", fontSize: "clamp(12px,2.5vw,16px)",
-                color: "#ff9800", marginBottom: 10, animation: "wobble 1s ease-in-out infinite",
+                color: "#ff9800", animation: "wobble 1s ease-in-out infinite",
               }}>
-                Nuevo record!
+                ⭐ ¡Nuevo récord! ⭐
               </div>
             )}
-            <button onClick={(e) => { e.stopPropagation(); beginCountdown(); }} style={{
-              fontFamily: "'Fredoka One',cursive", fontSize: "clamp(14px,3vw,18px)", color: "#fff",
-              background: color.body, border: "none", padding: "12px 32px", borderRadius: 25,
-              cursor: "pointer", boxShadow: `0 4px 14px ${color.body}44`, transition: "all .2s", marginTop: 6,
-            }}
-              onMouseEnter={(e) => { e.target.style.transform = "scale(1.08)"; }}
-              onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-            >Otra vez</button>
-          </div>
+          </GameOverlay>
         )}
       </div>
 
-      {/* Info below canvas */}
-      {gameState !== "playing" && gameState !== "countdown" && (
+      {/* Info bajo el canvas */}
+      {!inGame && (
         <div style={{ marginTop: 10, fontSize: "clamp(11px,2vw,14px)", color: "#999", zIndex: 1 }}>
-          Mejor: {best} puntos
+          Récord: {best} puntos
         </div>
       )}
-    </div>
+    </NotebookPage>
   );
 }

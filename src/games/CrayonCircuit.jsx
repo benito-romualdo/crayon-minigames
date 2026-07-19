@@ -1,15 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import BackButton from "../components/BackButton";
-
-/* ── Colors (same as CrayonSnake) ── */
-const COLORS = [
-  { name: "Rojo", body: "#e63946", tip: "#c1121f", shade: "#a4161a" },
-  { name: "Azul", body: "#2196F3", tip: "#1565C0", shade: "#0D47A1" },
-  { name: "Verde", body: "#4caf50", tip: "#2e7d32", shade: "#1b5e20" },
-  { name: "Naranja", body: "#ff9800", tip: "#e65100", shade: "#bf360c" },
-  { name: "Morado", body: "#9c27b0", tip: "#6a1b9a", shade: "#4a148c" },
-  { name: "Rosa", body: "#e91e8c", tip: "#c2185b", shade: "#880e4f" },
-];
+import { COLORS } from "../shared/theme";
+import { NotebookPage, GameHeader, PillButton, GameOverlay } from "../shared/components";
 
 const BOARD_PX = 320;
 
@@ -159,17 +150,6 @@ function isEndpoint(x, y, level) {
   return null;
 }
 
-
-/* ── CSS ── */
-const css = `
-@import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Fredoka+One&display=swap');
-@keyframes wobble{0%,100%{transform:rotate(-1deg)}50%{transform:rotate(1deg)}}
-@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-@keyframes rainbow{0%{color:#e63946}16%{color:#ff9800}33%{color:#4caf50}50%{color:#2196F3}66%{color:#9c27b0}83%{color:#e91e8c}100%{color:#e63946}}
-@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
-@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
-`;
-
 /* ── Sub-components ── */
 function CrayonDot({ x, y, cell, color, active }) {
   const cx = x * cell + cell / 2;
@@ -314,7 +294,7 @@ export default function CrayonCircuit({ onBack }) {
       setDrawing({ color: COLORS[flow.colorIdx], colorName, path: [[cx, cy]] });
       return;
     }
-    // Check if cell is in an existing path — truncate and continue
+    // Si la celda pertenece a un trazo existente: recorta y continúa desde ahí
     for (const [colorName, pathCells] of Object.entries(paths)) {
       const idx = pathCells.findIndex(c => c[0] === cx && c[1] === cy);
       if (idx >= 0) {
@@ -336,7 +316,7 @@ export default function CrayonCircuit({ onBack }) {
     const last = d.path[d.path.length - 1];
     if (last[0] === cx && last[1] === cy) return;
 
-    // Backtrack check
+    // Retroceso: recorta hasta la celda ya pintada
     const existingIdx = d.path.findIndex(c => c[0] === cx && c[1] === cy);
     if (existingIdx >= 0) {
       const truncated = d.path.slice(0, existingIdx + 1);
@@ -346,7 +326,11 @@ export default function CrayonCircuit({ onBack }) {
       return;
     }
 
-    // Adjacency — interpolate if needed
+    // Si el trazo ya llegó al otro extremo de su color, no se extiende más
+    const lastFlow = isEndpoint(last[0], last[1], level);
+    if (lastFlow && COLORS[lastFlow.colorIdx].name === d.colorName && d.path.length > 1) return;
+
+    // Adyacencia — interpola si hace falta
     const dx = cx - last[0], dy = cy - last[1];
     const dist = Math.abs(dx) + Math.abs(dy);
     if (dist === 0) return;
@@ -355,34 +339,39 @@ export default function CrayonCircuit({ onBack }) {
     if (dist === 1) {
       cellsToAdd = [[cx, cy]];
     } else {
-      // Interpolate step by step
+      if (dx !== 0 && dy !== 0) return; // diagonal: se ignora
       const steps = Math.max(Math.abs(dx), Math.abs(dy));
       const sx = dx === 0 ? 0 : dx / Math.abs(dx);
       const sy = dy === 0 ? 0 : dy / Math.abs(dy);
-      // Only interpolate along one axis at a time
-      if (dx !== 0 && dy !== 0) return; // Diagonal — skip
       for (let s = 1; s <= steps; s++) {
         cellsToAdd.push([last[0] + sx * s, last[1] + sy * s]);
       }
     }
 
-    // Check all cells to add
     let newPath = [...d.path];
+    let changed = false;
     for (const c of cellsToAdd) {
-      if (c[0] < 0 || c[1] < 0 || c[0] >= level.size || c[1] >= level.size) return;
-      // Check backtrack for interpolated cells
+      if (c[0] < 0 || c[1] < 0 || c[0] >= level.size || c[1] >= level.size) break;
       const btIdx = newPath.findIndex(p => p[0] === c[0] && p[1] === c[1]);
       if (btIdx >= 0) {
         newPath = newPath.slice(0, btIdx + 1);
+        changed = true;
         continue;
       }
+      const epFlow = isEndpoint(c[0], c[1], level);
+      // No se puede pasar por encima de un punto de otro color
+      if (epFlow && COLORS[epFlow.colorIdx].name !== d.colorName) break;
       newPath.push(c);
+      changed = true;
+      // Al alcanzar el otro extremo propio, el trazo se detiene
+      if (epFlow && !(c[0] === newPath[0][0] && c[1] === newPath[0][1])) break;
     }
+    if (!changed) return;
 
     const newD = { ...d, path: newPath };
     setDrawing(newD);
     drawingRef.current = newD;
-  }, [level, paths]);
+  }, [level]);
 
   const commitDrawing = useCallback(() => {
     const d = drawingRef.current;
@@ -392,7 +381,7 @@ export default function CrayonCircuit({ onBack }) {
     setDrawing(null);
     drawingRef.current = null;
 
-    // Check crossing first
+    // Primero, comprobar cruces
     if (checkCrossing(newPaths)) {
       setShowFail(true);
       return;
@@ -458,6 +447,11 @@ export default function CrayonCircuit({ onBack }) {
     drawingRef.current = null;
   }, [history]);
 
+  const undoFail = useCallback(() => {
+    undo();
+    setShowFail(false);
+  }, [undo]);
+
   const goToLevels = useCallback(() => {
     setScreen("levels");
     setCurrentLevel(null);
@@ -475,10 +469,10 @@ export default function CrayonCircuit({ onBack }) {
     }
   }, [level, selectLevel, goToLevels]);
 
-  /* ── Connected count ── */
-  const connectedCount = useMemo(() => {
-    if (!level) return 0;
-    let count = 0;
+  /* ── Flujos conectados (por nombre de color) ── */
+  const connectedNames = useMemo(() => {
+    const s = new Set();
+    if (!level) return s;
     for (const flow of level.flows) {
       const name = COLORS[flow.colorIdx].name;
       const path = paths[name];
@@ -488,10 +482,11 @@ export default function CrayonCircuit({ onBack }) {
       if (
         (first[0] === ep0[0] && first[1] === ep0[1] && last[0] === ep1[0] && last[1] === ep1[1]) ||
         (first[0] === ep1[0] && first[1] === ep1[1] && last[0] === ep0[0] && last[1] === ep0[1])
-      ) count++;
+      ) s.add(name);
     }
-    return count;
+    return s;
   }, [level, paths]);
+  const connectedCount = connectedNames.size;
 
   /* ── Grid lines (memoized) ── */
   const gridLines = useMemo(() => {
@@ -507,29 +502,12 @@ export default function CrayonCircuit({ onBack }) {
   /* ── Render: Level Select ── */
   if (screen === "levels") {
     return (
-      <div style={{
-        minHeight: "100vh", background: "#fef9ef",
-        backgroundImage: "linear-gradient(rgba(180,210,240,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(180,210,240,.25) 1px,transparent 1px)",
-        backgroundSize: "20px 20px",
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        fontFamily: "'Patrick Hand',cursive", userSelect: "none", padding: 20, position: "relative",
-      }}>
-        <style>{css}</style>
-        <BackButton onBack={onBack} />
-
-        {/* Margin lines */}
-        <div style={{ position: "fixed", left: 60, top: 0, bottom: 0, width: 2, background: "rgba(220,80,80,.3)", zIndex: 0 }} />
-        <div style={{ position: "fixed", left: 63, top: 0, bottom: 0, width: 1, background: "rgba(220,80,80,.15)", zIndex: 0 }} />
-
-        <h1 style={{
-          fontFamily: "'Fredoka One',cursive", fontSize: "clamp(24px,5vw,40px)",
-          margin: "0 0 8px", animation: "rainbow 4s linear infinite",
-          textShadow: "2px 2px 0 rgba(0,0,0,.08)", letterSpacing: 2, zIndex: 1,
-        }}>Crayon Circuit</h1>
-
-        <p style={{ fontSize: "clamp(13px,2.5vw,16px)", color: "#888", margin: "0 0 24px", zIndex: 1, textAlign: "center" }}>
-          Conecta los puntos de colores sin cruzar
-        </p>
+      <NotebookPage onBack={onBack} doodles="circuit">
+        <GameHeader
+          title="Crayon Circuit"
+          subtitle="Conecta los puntos de colores sin cruzar"
+          titleStyle={{ fontSize: "clamp(24px,5vw,40px)" }}
+        />
 
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12,
@@ -538,16 +516,13 @@ export default function CrayonCircuit({ onBack }) {
           {LEVELS.map((lvl) => {
             const done = completedLevels.includes(lvl.id);
             return (
-              <button key={lvl.id} onClick={() => selectLevel(lvl.id)} style={{
+              <button key={lvl.id} className="cg-card" onClick={() => selectLevel(lvl.id)} style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
                 padding: "16px 12px", background: done ? "rgba(76,175,80,.12)" : "rgba(255,255,255,.85)",
                 border: `2.5px solid ${done ? "rgba(76,175,80,.4)" : "rgba(0,0,0,.1)"}`,
                 borderRadius: 16, cursor: "pointer", boxShadow: "0 3px 12px rgba(0,0,0,.06)",
-                transition: "all .2s", fontFamily: "'Patrick Hand',cursive", position: "relative",
-              }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.06) rotate(-0.5deg)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-              >
+                fontFamily: "'Patrick Hand',cursive", position: "relative",
+              }}>
                 <span style={{ fontFamily: "'Fredoka One',cursive", fontSize: "clamp(18px,4vw,26px)", color: "#444" }}>
                   {lvl.id}
                 </span>
@@ -563,40 +538,22 @@ export default function CrayonCircuit({ onBack }) {
             );
           })}
         </div>
-      </div>
+      </NotebookPage>
     );
   }
 
   /* ── Render: Game ── */
   if (!level) return null;
 
-  // Build set of active drawing cells for highlighting
-  const drawingCells = drawing ? new Set(drawing.path.map(c => cellKey(c[0], c[1]))) : new Set();
   const drawingColorName = drawing ? drawing.colorName : null;
 
   return (
-    <div style={{
-      minHeight: "100vh", background: "#fef9ef",
-      backgroundImage: "linear-gradient(rgba(180,210,240,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(180,210,240,.25) 1px,transparent 1px)",
-      backgroundSize: "20px 20px",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Patrick Hand',cursive", userSelect: "none", padding: 20, position: "relative",
-    }}>
-      <style>{css}</style>
-      <BackButton onBack={onBack} />
-
-      {/* Margin lines */}
-      <div style={{ position: "fixed", left: 60, top: 0, bottom: 0, width: 2, background: "rgba(220,80,80,.3)", zIndex: 0 }} />
-      <div style={{ position: "fixed", left: 63, top: 0, bottom: 0, width: 1, background: "rgba(220,80,80,.15)", zIndex: 0 }} />
-
+    <NotebookPage onBack={onBack} doodles="circuit">
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10, zIndex: 1, flexWrap: "wrap", justifyContent: "center" }}>
-        <button onClick={goToLevels} style={{
-          fontFamily: "'Patrick Hand',cursive", fontSize: 14, color: "#666",
-          background: "rgba(255,255,255,.85)", border: "2px solid rgba(0,0,0,.12)",
-          borderRadius: 14, padding: "5px 12px", cursor: "pointer",
-          boxShadow: "0 2px 8px rgba(0,0,0,.06)",
-        }}>← Niveles</button>
+        <PillButton ghost onClick={goToLevels} style={{ fontFamily: "'Patrick Hand',cursive", fontSize: 14, padding: "5px 12px", borderRadius: 14, letterSpacing: 0 }}>
+          ← Niveles
+        </PillButton>
         <span style={{ fontFamily: "'Fredoka One',cursive", fontSize: "clamp(14px,3vw,18px)", color: "#444" }}>
           {level.name}
         </span>
@@ -607,8 +564,7 @@ export default function CrayonCircuit({ onBack }) {
 
       {/* Board */}
       <div style={{
-        position: "relative", width: W, height: H,
-        maxWidth: "calc(100vw - 24px)", maxHeight: "calc(100vw - 24px)", aspectRatio: "1",
+        position: "relative", width: `min(100%, ${W}px)`, aspectRatio: "1 / 1",
         border: "3px solid #999", borderRadius: 12, background: "#fffef7",
         boxShadow: "0 4px 24px rgba(0,0,0,.08),inset 0 0 30px rgba(0,0,0,.02)",
         overflow: "hidden", zIndex: 1, touchAction: "none",
@@ -621,7 +577,6 @@ export default function CrayonCircuit({ onBack }) {
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
         >
-          {/* Filter */}
           <defs>
             <filter id="crayon-rough-circuit" x="-5%" y="-5%" width="110%" height="110%">
               <feTurbulence type="turbulence" baseFrequency=".45" numOctaves="3" seed="2" result="noise" />
@@ -632,12 +587,17 @@ export default function CrayonCircuit({ onBack }) {
           {/* Grid */}
           {gridLines}
 
-          {/* Committed paths */}
+          {/* Committed paths (con "pop" al quedar conectados) */}
           {Object.entries(paths).map(([colorName, cells]) => {
-            if (drawingColorName === colorName) return null; // Being drawn, skip committed
+            if (drawingColorName === colorName) return null; // se está redibujando
             const color = COLORS.find(c => c.name === colorName);
             if (!color) return null;
-            return <CrayonStroke key={colorName} cells={cells} cell={CELL} color={color} filter={true} />;
+            const connected = connectedNames.has(colorName);
+            return (
+              <g key={colorName + (connected ? "-on" : "")} className={connected ? "cg-stroke-pop" : undefined}>
+                <CrayonStroke cells={cells} cell={CELL} color={color} filter={true} />
+              </g>
+            );
           })}
 
           {/* Active drawing */}
@@ -649,15 +609,7 @@ export default function CrayonCircuit({ onBack }) {
           {level.flows.map((flow) => {
             const color = COLORS[flow.colorIdx];
             const name = color.name;
-            const path = paths[name];
-            const isConnected = path && path.length >= 2 && (() => {
-              const ep0 = flow.endpoints[0], ep1 = flow.endpoints[1];
-              const first = path[0], last = path[path.length - 1];
-              return (
-                (first[0] === ep0[0] && first[1] === ep0[1] && last[0] === ep1[0] && last[1] === ep1[1]) ||
-                (first[0] === ep1[0] && first[1] === ep1[1] && last[0] === ep0[0] && last[1] === ep0[1])
-              );
-            })();
+            const isConnected = connectedNames.has(name);
             const isActive = drawing && drawing.colorName === name;
             return flow.endpoints.map((ep, i) => (
               <CrayonDot
@@ -678,103 +630,56 @@ export default function CrayonCircuit({ onBack }) {
 
         {/* Complete overlay */}
         {showComplete && (
-          <div style={{
-            position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center",
-            background: "rgba(254,249,239,.92)", animation: "fadeIn .4s ease", padding: 20, zIndex: 10,
-          }}>
-            <div style={{
-              fontFamily: "'Fredoka One',cursive", fontSize: "clamp(22px,5vw,32px)",
-              color: "#4caf50", marginBottom: 8, textShadow: "2px 2px 0 rgba(0,0,0,.06)",
-            }}>
-              ¡Completado! ✓
-            </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap", justifyContent: "center" }}>
-              {LEVELS.findIndex(l => l.id === level.id) < LEVELS.length - 1 && (
-                <button onClick={nextLevel} style={{
-                  fontFamily: "'Fredoka One',cursive", fontSize: "clamp(13px,2.5vw,16px)", color: "#fff",
-                  background: "#4caf50", border: "none", padding: "10px 24px", borderRadius: 25,
-                  cursor: "pointer", boxShadow: "0 4px 14px rgba(76,175,80,.3)",
-                }}
-                  onMouseEnter={(e) => { e.target.style.transform = "scale(1.08)"; }}
-                  onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-                >Siguiente Nivel →</button>
-              )}
-              <button onClick={goToLevels} style={{
-                fontFamily: "'Fredoka One',cursive", fontSize: "clamp(13px,2.5vw,16px)", color: "#666",
-                background: "rgba(255,255,255,.85)", border: "2px solid rgba(0,0,0,.12)",
-                padding: "10px 24px", borderRadius: 25, cursor: "pointer",
-              }}
-                onMouseEnter={(e) => { e.target.style.transform = "scale(1.08)"; }}
-                onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-              >Volver a Niveles</button>
-            </div>
-          </div>
+          <GameOverlay
+            emoji="🎉"
+            title="¡Completado!"
+            titleColor="#4caf50"
+            actions={
+              <>
+                {LEVELS.findIndex(l => l.id === level.id) < LEVELS.length - 1 && (
+                  <PillButton color="#4caf50" onClick={nextLevel}>Siguiente Nivel →</PillButton>
+                )}
+                <PillButton ghost onClick={goToLevels}>Volver a Niveles</PillButton>
+              </>
+            }
+          />
         )}
 
         {/* Fail overlay (lines crossed) */}
         {showFail && (
-          <div style={{
-            position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center",
-            background: "rgba(254,249,239,.92)", animation: "fadeIn .4s ease", padding: 20, zIndex: 10,
-          }}>
-            <div style={{
-              fontFamily: "'Fredoka One',cursive", fontSize: "clamp(28px,6vw,42px)",
-              marginBottom: 8, animation: "shake .5s ease",
-            }}>
-              ✏️💥
-            </div>
-            <div style={{
-              fontFamily: "'Fredoka One',cursive", fontSize: "clamp(18px,4vw,26px)",
-              color: "#e63946", marginBottom: 4, textShadow: "2px 2px 0 rgba(0,0,0,.06)",
-            }}>
-              ¡Las lineas se cruzan!
-            </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap", justifyContent: "center" }}>
-              <button onClick={resetLevel} style={{
-                fontFamily: "'Fredoka One',cursive", fontSize: "clamp(13px,2.5vw,16px)", color: "#fff",
-                background: "#e63946", border: "none", padding: "10px 24px", borderRadius: 25,
-                cursor: "pointer", boxShadow: "0 4px 14px rgba(230,57,70,.3)",
-              }}
-                onMouseEnter={(e) => { e.target.style.transform = "scale(1.08)"; }}
-                onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-              >↻ Volver a intentar</button>
-              <button onClick={goToLevels} style={{
-                fontFamily: "'Fredoka One',cursive", fontSize: "clamp(13px,2.5vw,16px)", color: "#666",
-                background: "rgba(255,255,255,.85)", border: "2px solid rgba(0,0,0,.12)",
-                padding: "10px 24px", borderRadius: 25, cursor: "pointer",
-              }}
-                onMouseEnter={(e) => { e.target.style.transform = "scale(1.08)"; }}
-                onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-              >Salir</button>
-            </div>
-          </div>
+          <GameOverlay
+            emoji="✏️💥"
+            emojiAnimation="shake .5s ease"
+            title="¡Las líneas se cruzan!"
+            titleColor="#e63946"
+            actions={
+              <>
+                <PillButton color="#e63946" onClick={undoFail}>↩ Deshacer trazo</PillButton>
+                <PillButton ghost onClick={resetLevel}>↻ Reiniciar</PillButton>
+              </>
+            }
+          />
         )}
       </div>
 
       {/* Bottom buttons */}
       <div style={{ display: "flex", gap: 12, marginTop: 14, zIndex: 1 }}>
-        <button onClick={resetLevel} style={{
-          fontFamily: "'Patrick Hand',cursive", fontSize: "clamp(13px,2.5vw,16px)", color: "#e63946",
-          background: "rgba(255,255,255,.85)", border: "2px solid rgba(230,57,70,.2)",
-          borderRadius: 14, padding: "8px 18px", cursor: "pointer",
-          boxShadow: "0 2px 8px rgba(0,0,0,.06)",
-        }}
-          onMouseEnter={(e) => { e.target.style.transform = "scale(1.05)"; }}
-          onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-        >↻ Reiniciar</button>
-        <button onClick={undo} disabled={history.length === 0} style={{
-          fontFamily: "'Patrick Hand',cursive", fontSize: "clamp(13px,2.5vw,16px)",
-          color: history.length === 0 ? "#ccc" : "#666",
-          background: "rgba(255,255,255,.85)", border: "2px solid rgba(0,0,0,.12)",
-          borderRadius: 14, padding: "8px 18px", cursor: history.length === 0 ? "default" : "pointer",
-          boxShadow: "0 2px 8px rgba(0,0,0,.06)",
-        }}
-          onMouseEnter={(e) => { if (history.length > 0) e.target.style.transform = "scale(1.05)"; }}
-          onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; }}
-        >↩ Deshacer</button>
+        <PillButton
+          ghost
+          onClick={resetLevel}
+          style={{ fontFamily: "'Patrick Hand',cursive", color: "#e63946", border: "2px solid rgba(230,57,70,.2)", padding: "8px 18px", borderRadius: 14, letterSpacing: 0 }}
+        >
+          ↻ Reiniciar
+        </PillButton>
+        <PillButton
+          ghost
+          onClick={undo}
+          disabled={history.length === 0}
+          style={{ fontFamily: "'Patrick Hand',cursive", padding: "8px 18px", borderRadius: 14, letterSpacing: 0 }}
+        >
+          ↩ Deshacer
+        </PillButton>
       </div>
-    </div>
+    </NotebookPage>
   );
 }

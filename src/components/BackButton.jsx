@@ -1,7 +1,18 @@
+import { useEffect } from "react";
+
 export default function BackButton({ onBack }) {
+  // Escape vuelve al menú desde cualquier juego
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onBack?.(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack]);
+
   return (
     <button
+      className="cg-btn"
       onClick={onBack}
+      title="Volver al menú (Esc)"
       style={{
         position: "fixed",
         top: 12,
@@ -16,16 +27,7 @@ export default function BackButton({ onBack }) {
         padding: "6px 14px",
         cursor: "pointer",
         boxShadow: "0 2px 8px rgba(0,0,0,.06)",
-        transition: "all .2s",
         userSelect: "none",
-      }}
-      onMouseEnter={(e) => {
-        e.target.style.background = "rgba(255,255,255,1)";
-        e.target.style.transform = "scale(1.05)";
-      }}
-      onMouseLeave={(e) => {
-        e.target.style.background = "rgba(255,255,255,.85)";
-        e.target.style.transform = "scale(1)";
       }}
     >
       ← Volver
